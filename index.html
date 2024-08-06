@@ -92,7 +92,7 @@
       numRows,
       offsetX,
       offsetY,
-      selectedCells
+      selection
     } = grid;
 
     context.clearRect(0, 0, width, height);
@@ -140,25 +140,44 @@
         rowIndex <= visibleBounds.stop.rowIndex;
         rowIndex++
       ) {
+        const isSelected = selection && (
+          rowIndex >= selection.start.rowIndex &&
+          rowIndex <= selection.stop.rowIndex &&
+          columnIndex >= selection.start.columnIndex &&
+          columnIndex <= selection.stop.columnIndex
+        );
+
         drawDataCell({
+          columnIndex,
           context,
-          mode: "view",
+          mode: isSelected ? "selected" : "view",
           rect: modifyRectForOffsets(getCellRect(rowIndex, columnIndex)),
+          rowIndex,
           text: getCellData(rowIndex, columnIndex),
         });
       }
     }
 
-    // Draw selected cell(s) above base grid
-    if (selectedCells) {
-      selectedCells.forEach(({ columnIndex, rowIndex }) => {
-        drawDataCell({
-          context,
-          mode: "selected",
-          rect: modifyRectForOffsets(getCellRect(rowIndex, columnIndex)),
-          text: getCellData(rowIndex, columnIndex),
-        });
-      });
+    // Draw selection outline above base grid
+    if (selection) {
+      context.strokeStyle = '#88f';
+
+      const topLeftCell = modifyRectForOffsets(getCellRect(selection.start.rowIndex, selection.start.columnIndex));
+      const bottomRightCell = modifyRectForOffsets(getCellRect(selection.stop.rowIndex, selection.stop.columnIndex));
+
+      const x0 = topLeftCell.x;
+      const y0 = topLeftCell.y;
+      const x1 = bottomRightCell.x + bottomRightCell.width;
+      const y1 = bottomRightCell.y + bottomRightCell.height;
+
+      context.beginPath();
+      context.moveTo(x0, y0);
+      context.lineTo(x1, y0);
+      context.lineTo(x1, y1);
+      context.lineTo(x0, y1);
+      context.lineTo(x0, y0);
+      context.stroke();
+      context.closePath();
     }
 
     // Draw active cell on top of everything else
@@ -166,9 +185,11 @@
       const { columnIndex, rowIndex } = focusedCell;
 
       drawDataCell({
+        columnIndex,
         context,
         mode: "focused",
         rect: modifyRectForOffsets(getCellRect(rowIndex, columnIndex)),
+        rowIndex,
         text: getCellData(rowIndex, columnIndex),
       });
     }
@@ -240,7 +261,7 @@
     });
   }
 
-  function drawDataCell({ context, mode, rect, text }) {
+  function drawDataCell({ columnIndex, context, mode, rect, rowIndex, text }) {
     let radius = 0;
 
     let {
@@ -252,7 +273,7 @@
 
     switch (mode) {
       case 'focused': {
-        context.fillStyle = '#fff';
+        context.fillStyle = '#eef';
         context.lineWidth = 2;
         context.strokeStyle = '#88f';
         break;
@@ -260,7 +281,7 @@
       case 'selected': {
         context.fillStyle = '#eef';
         context.lineWidth = 1;
-        context.strokeStyle = '#88f';
+        context.strokeStyle = '#ddd';
         break;
       }
       case 'view': {
@@ -374,7 +395,7 @@
     let offsetY = 0;
 
     let focusedCell = null;
-    let selectedCells = [];
+    let selection = null;
 
     const sizer = document.getElementById('sizer');
     sizer.style.height = `${cellHeight * numRows}px`
@@ -394,12 +415,13 @@
     // TODO Support keyboard navigation also
 
     scroller.addEventListener('pointerdown', (event) => {
-      selectedCells = [];
-
       focusedCell = firstDragCell = getCellAtPosition(event.offsetX, event.offsetY);
 
       if (focusedCell) {
-        selectedCells.push(focusedCell);
+        selection = {
+          start: focusedCell,
+          stop: focusedCell,
+        };
       }
 
       redraw();
@@ -414,21 +436,16 @@
           mostRecentDragCell = cell;
 
           // Re-calculate all selected cells based on start point and current point
-          const startColumnIndex = Math.min(firstDragCell.columnIndex, mostRecentDragCell.columnIndex);
-          const stopColumnIndex = Math.max(firstDragCell.columnIndex, mostRecentDragCell.columnIndex);
-          const startRowIndex = Math.min(firstDragCell.rowIndex, mostRecentDragCell.rowIndex);
-          const stopRowIndex = Math.max(firstDragCell.rowIndex, mostRecentDragCell.rowIndex);
-
-          selectedCells = [];
-
-          for (let rowIndex = startRowIndex; rowIndex <= stopRowIndex; rowIndex++) {
-            for (let columnIndex = startColumnIndex; columnIndex <= stopColumnIndex; columnIndex++) {
-              selectedCells.push({
-                columnIndex,
-                rowIndex,
-              });
-            }
-          }
+          selection = {
+            start: {
+              columnIndex: Math.min(firstDragCell.columnIndex, mostRecentDragCell.columnIndex),
+              rowIndex: Math.min(firstDragCell.rowIndex, mostRecentDragCell.rowIndex)
+            },
+            stop: {
+              columnIndex: Math.max(firstDragCell.columnIndex, mostRecentDragCell.columnIndex),
+              rowIndex: Math.max(firstDragCell.rowIndex, mostRecentDragCell.rowIndex)
+            },
+          };
 
           redraw();
         }
@@ -511,7 +528,7 @@
         numRows,
         offsetX,
         offsetY,
-        selectedCells,
+        selection,
       });
     }
 
