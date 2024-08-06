@@ -1,0 +1,522 @@
+<html>
+<head>
+<style>
+  body {
+    background: #ddd;
+    padding: 0;
+    margin: 0;
+  }
+
+  #positioner {
+    position: relative;
+  }
+
+  #scroller {
+    overflow: auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    touch-action: pan-x pan-y;
+  }
+
+  #canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: #fff;
+  }
+</style>
+</head>
+<body>
+
+<div id="positioner">
+  <canvas id="canvas"></canvas>
+
+  <div id="scroller">
+    <div id="sizer"></div>
+  </div>
+</div>
+
+<script>
+  const columnHeaders = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+  let width = 800;
+  let height = 400;
+
+  const cellPadding = 4;
+  const focusedCellOffset = 2;
+
+  const scroller = document.getElementById('scroller');
+  const canvas = document.getElementById('canvas');
+  const context = canvas.getContext("2d");
+
+  function scaleHelper() {
+    const dpr = window.devicePixelRatio || 2
+
+    const { width, height } = canvas.getBoundingClientRect()
+
+    if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+    }
+
+    // Reset scale to identical matrix to allow multiple re-scales.
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.scale(dpr, dpr);
+  }
+
+  function resize() {
+    height = window.innerHeight;
+    width = window.innerWidth;
+
+    canvas.style.height = `${height}px`
+    canvas.style.width = `${width}px`;
+
+    scroller.style.height = `${height}px`
+    scroller.style.width = `${width}px`;
+
+    scaleHelper();
+  }
+
+  resize();
+
+  // TODO Handle resize
+
+  function draw(grid) {
+    const {
+      focusedCell,
+      getCellAtPosition,
+      getCellData,
+      getCellRect,
+      numCols,
+      numRows,
+      offsetX,
+      offsetY,
+      selectedCells
+    } = grid;
+
+    context.clearRect(0, 0, width, height);
+
+    const modifyRectForOffsets = (rect) => {
+      rect.x -= offsetX;
+      rect.y -= offsetY;
+      return rect;
+    };
+
+    const getColumnHeader = (columnIndex) => {
+      let label = "";
+
+      while (columnIndex >= 0) {
+        label += columnHeaders[columnIndex % columnHeaders.length];
+
+        columnIndex -= columnHeaders.length;
+      }
+
+      return label;
+    };
+
+    // TODO Only draw visible cells (requires tracking offsets)
+    const topLeftCell = getCellAtPosition(offsetX, offsetY, true);
+    const bottomRightCell = getCellAtPosition(offsetX + width, offsetY + height, true);
+    const visibleBounds = {
+      start: {
+        columnIndex: topLeftCell.columnIndex,
+        rowIndex: topLeftCell.rowIndex
+      },
+      stop: {
+        columnIndex: bottomRightCell.columnIndex,
+        rowIndex: bottomRightCell.rowIndex
+      }
+    };
+
+    // Draw data cells
+    for (
+      let columnIndex = visibleBounds.start.columnIndex;
+      columnIndex <= visibleBounds.stop.columnIndex;
+      columnIndex++
+    ) {
+      for (
+        let rowIndex = visibleBounds.start.rowIndex;
+        rowIndex <= visibleBounds.stop.rowIndex;
+        rowIndex++
+      ) {
+        drawDataCell({
+          context,
+          mode: "view",
+          rect: modifyRectForOffsets(getCellRect(rowIndex, columnIndex)),
+          text: getCellData(rowIndex, columnIndex),
+        });
+      }
+    }
+
+    // Draw selected cell(s) above base grid
+    if (selectedCells) {
+      selectedCells.forEach(({ columnIndex, rowIndex }) => {
+        drawDataCell({
+          context,
+          mode: "selected",
+          rect: modifyRectForOffsets(getCellRect(rowIndex, columnIndex)),
+          text: getCellData(rowIndex, columnIndex),
+        });
+      });
+    }
+
+    // Draw active cell on top of everything else
+    if (focusedCell) {
+      const { columnIndex, rowIndex } = focusedCell;
+
+      drawDataCell({
+        context,
+        mode: "focused",
+        rect: modifyRectForOffsets(getCellRect(rowIndex, columnIndex)),
+        text: getCellData(rowIndex, columnIndex),
+      });
+    }
+
+    // Draw fixed row headers
+    for (
+      let columnIndex = visibleBounds.start.columnIndex;
+      columnIndex <= visibleBounds.stop.columnIndex;
+      columnIndex++
+    ) {
+      drawFixedCell({
+        context,
+        isFocused: focusedCell?.columnIndex === columnIndex,
+        rect: {
+          ...modifyRectForOffsets(getCellRect(-1, columnIndex)),
+          y: 0,
+        },
+        text: columnIndex >= 0 ? getColumnHeader(columnIndex) : "",
+      });
+    }
+
+    // Draw fixed column labels
+    for (
+      let rowIndex = visibleBounds.start.rowIndex;
+      rowIndex <= visibleBounds.stop.rowIndex;
+      rowIndex++
+    ) {
+      drawFixedCell({
+        context,
+        isFocused: focusedCell?.rowIndex === rowIndex,
+        rect: {
+          ...modifyRectForOffsets(getCellRect(rowIndex, -1)),
+          x: 0
+        },
+        text: rowIndex,
+      });
+    }
+
+    drawFixedCell({
+      context,
+      rect: getCellRect(-1, -1),
+      text: "",
+    });
+  }
+
+  function drawFixedCell({ context, isFocused, radius = 0, rect, text }) {
+    const { height, width, x, y } = rect;
+
+    if (isFocused) {
+      context.fillStyle = '#ccf';
+    } else {
+      context.fillStyle = '#eee';
+    }
+
+    context.strokeStyle = '#ddd';
+
+    context.beginPath();
+    context.roundRect(x, y, width, height, radius);
+    context.fill();
+    context.stroke();
+    context.closePath();
+
+    fillTextHelper({
+      context,
+      padding: cellPadding,
+      rect,
+      text,
+      textAlign: 'center',
+    });
+  }
+
+  function drawDataCell({ context, mode, rect, text }) {
+    let radius = 0;
+
+    let {
+      height,
+      width,
+      x,
+      y,
+    } = rect;
+
+    switch (mode) {
+      case 'focused': {
+        context.fillStyle = '#fff';
+        context.lineWidth = 2;
+        context.strokeStyle = '#88f';
+        break;
+      }
+      case 'selected': {
+        context.fillStyle = '#eef';
+        context.lineWidth = 1;
+        context.strokeStyle = '#88f';
+        break;
+      }
+      case 'view': {
+        context.fillStyle = '#fff';
+        context.lineWidth = 1;
+        context.strokeStyle = '#ddd';
+        break;
+      }
+      default: {
+        throw `Unsupported mode "${mode}"`;
+      }
+    }
+
+    context.beginPath();
+    context.roundRect(x, y, width, height, radius);
+    context.fill();
+    context.stroke();
+    context.closePath();
+
+    fillTextHelper({
+      context,
+      padding: cellPadding,
+      rect,
+      text,
+      textAlign: 'right',
+    });
+  }
+
+  function fillTextHelper({
+    context,
+    padding,
+    rect,
+    text,
+    textAlign,
+  }) {
+    let {
+      height,
+      width,
+      x,
+      y,
+    } = rect;
+
+    while (text.length > 0) {
+      const { width: measuredWidth } = context.measureText(text);
+
+      if (measuredWidth > width - padding * 2) {
+        text = text.substring(0, text.length - 1);
+      } else {
+        break;
+      }
+    }
+
+    const verticalCenter = y + height / 2;
+
+    context.font = "10px sans-serif";
+    context.textBaseline = "middle";
+    context.fillStyle = '#333';
+
+    switch (textAlign) {
+      case "center": {
+        context.textAlign = "center";
+        context.fillText(text, x + width / 2, verticalCenter);
+        break;
+      }
+      case "left": {
+        context.textAlign = "left";
+        context.fillText(text, x + padding, verticalCenter);
+        break;
+      }
+      case "right": {
+        context.textAlign = "right";
+        context.fillText(text, x + width - padding, verticalCenter);
+        break;
+      }
+      default: {
+        throw `Unsupported alignment "${textAlign}"`;
+      }
+    }
+  }
+
+  {
+    // Fake grid data for demo purposes
+
+    const numRows = 10_000;
+    const numCols = 100;
+
+    const cellHeight = 20;
+    const cellWidth = 50;
+
+    const randomData = new Array(numRows * numCols)
+      .fill(true)
+      .map(() => Math.round(Math.random() * 10_000));
+
+    const randomCellWidths = new Array(numRows * numCols)
+      .fill(true)
+      .map(() => cellWidth + Math.round(Math.random() * 25));
+
+    const totalWidth = new Array(numCols)
+      .fill(true)
+      .map((_, index) => index)
+      .reduce((totalWidth, columnIndex) => {
+        const width = randomCellWidths[columnIndex];
+
+        return totalWidth + width;
+      }, 0);
+
+    let firstDragCell = null;
+    let mostRecentDragCell = null;
+
+    let offsetX = 0;
+    let offsetY = 0;
+
+    let focusedCell = null;
+    let selectedCells = [];
+
+    const sizer = document.getElementById('sizer');
+    sizer.style.height = `${cellHeight * numRows}px`
+    sizer.style.width = `${totalWidth}px`;
+
+    // Let the browser manage (elastic) scrolling for us
+    scroller.addEventListener('scroll', (event) => {
+      event.preventDefault();
+
+      offsetX = scroller.scrollLeft;
+      offsetY = scroller.scrollTop;
+
+      redraw();
+    });
+
+    // TODO Separate event listeners from user config space
+    // TODO Support keyboard navigation also
+
+    scroller.addEventListener('pointerdown', (event) => {
+      selectedCells = [];
+
+      focusedCell = firstDragCell = getCellAtPosition(event.offsetX, event.offsetY);
+
+      if (focusedCell) {
+        selectedCells.push(focusedCell);
+      }
+
+      redraw();
+    });
+
+    scroller.addEventListener('pointermove', (event) => {
+      // TODO Update selection when moving outside of canvas (or within fixed cells)
+
+      if (firstDragCell) {
+        const cell = getCellAtPosition(event.offsetX, event.offsetY);
+        if (cell) {
+          mostRecentDragCell = cell;
+
+          // Re-calculate all selected cells based on start point and current point
+          const startColumnIndex = Math.min(firstDragCell.columnIndex, mostRecentDragCell.columnIndex);
+          const stopColumnIndex = Math.max(firstDragCell.columnIndex, mostRecentDragCell.columnIndex);
+          const startRowIndex = Math.min(firstDragCell.rowIndex, mostRecentDragCell.rowIndex);
+          const stopRowIndex = Math.max(firstDragCell.rowIndex, mostRecentDragCell.rowIndex);
+
+          selectedCells = [];
+
+          for (let rowIndex = startRowIndex; rowIndex <= stopRowIndex; rowIndex++) {
+            for (let columnIndex = startColumnIndex; columnIndex <= stopColumnIndex; columnIndex++) {
+              selectedCells.push({
+                columnIndex,
+                rowIndex,
+              });
+            }
+          }
+
+          redraw();
+        }
+      }
+    });
+
+    scroller.addEventListener('pointerup', (event) => {
+      firstDragCell = null;
+      mostRecentDragCell = null;
+    });
+
+    window.addEventListener('pointerup', (event) => {
+      firstDragCell = null;
+      mostRecentDragCell = null;
+    });
+
+    function getCellSize(rowIndex, columnIndex) {
+      return {
+        height: cellHeight,
+        width: columnIndex < 0 ? cellWidth : randomCellWidths[columnIndex]
+      };
+    }
+
+    function getCellAtPosition(x, y, findNearest) {
+      let columnIndex = -1;
+      let currentX = 0;
+      for (; columnIndex < numCols; columnIndex++) {
+        const { width } = getCellSize(0, columnIndex);
+
+        currentX += width;
+
+        if (currentX >= x && currentX + width >= x) {
+          break;
+        }
+      }
+
+      const rowIndex = Math.floor(y / cellHeight) - 1;
+
+      if (columnIndex < 0 || rowIndex < 0) {
+        if (findNearest) {
+          return {
+            columnIndex: Math.max(columnIndex, 0),
+            rowIndex: Math.max(rowIndex, 0)
+          };
+        } else {
+          return null;
+        }
+      } else {
+        return { columnIndex, rowIndex };
+      }
+    }
+
+    function redraw() {
+      draw({
+        // TODO Cache computed cell offsets so we don't need to recalculate on every scroll
+        getCellRect: (rowIndex, columnIndex) => {
+          let width = randomCellWidths[columnIndex] ?? cellWidth;
+
+          let x = 0;
+          for (let prevColumnIndex = -1; prevColumnIndex < columnIndex; prevColumnIndex++) {
+            const { width } = getCellSize(0, prevColumnIndex);
+
+            x += width;
+          }
+
+          return {
+            height: cellHeight,
+            width,
+            x,
+            y: (rowIndex + 1) * cellHeight
+          };
+        },
+        getCellData: (rowIndex, columnIndex) => {
+          const index = rowIndex * numCols + columnIndex;
+          return randomData[index];
+        },
+        getCellAtPosition,
+        focusedCell,
+        numCols,
+        numRows,
+        offsetX,
+        offsetY,
+        selectedCells,
+      });
+    }
+
+    redraw();
+  }
+</script>
+</body>
+</html>
