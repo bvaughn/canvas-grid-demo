@@ -26,6 +26,11 @@
     left: 0;
     background: #fff;
   }
+
+  #activeCellInput {
+    position: absolute;
+    text-align: right;
+  }
 </style>
 </head>
 <body>
@@ -36,17 +41,19 @@
   <div id="scroller">
     <div id="sizer"></div>
   </div>
+
+  <input id="activeCellInput" type="text" />
 </div>
 
 <script src="./utils.js"></script>
 <script>
   const columnHeaders = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
-  const COLORS = {
+  const STYLES = {
     background: {
       default: '#fff',
       fixedRow: '#f8f9fa',
-      focused: '#eee9effdf',
+      focused: '#e9effd',
       selected: '#e9effd',
       selectedFixed: '#d3e3fe',
     },
@@ -56,6 +63,13 @@
       fixedRow: '#c0c0c0',
       focused: '#1b73e8',
       selected: '#1b73e8',
+    },
+    fonts: {
+      default: '10px sans-serif',
+      fixedColumn: '8px sans-serif',
+      fixedColumnSelected: '8px sans-serif bold',
+      fixedRow: '10px sans-serif',
+      fixedRowSelected: '10px sans-serif bold',
     },
     text: {
       default: '#333',
@@ -69,6 +83,7 @@
   const cellPadding = 4;
   const focusedCellOffset = 2;
 
+  const activeCellInput = document.getElementById('activeCellInput');
   const scroller = document.getElementById('scroller');
   const canvas = document.getElementById('canvas');
   const context = canvas.getContext("2d");
@@ -107,6 +122,8 @@
 
   function draw(grid) {
     const {
+      activeCell,
+      activeCellRect,
       focusedCell,
       getCellAtPosition,
       getCellData,
@@ -194,7 +211,7 @@
           x: topLeftCell.x,
           y: topLeftCell.y,
         },
-        strokeStyle: COLORS.border.selected,
+        strokeStyle: STYLES.border.selected,
       });
     }
 
@@ -204,16 +221,14 @@
       const rect = modifyRectForOffsets(getCellRect(rowIndex, columnIndex));
 
       drawRect({
-        boxSizing: "content-box",
         context,
-        lineWidth: 2,
         rect: {
           height: rect.height,
           width: rect.width,
           x: rect.x,
           y: rect.y,
         },
-        strokeStyle: COLORS.border.focused,
+        strokeStyle: STYLES.border.focused,
       });
     }
 
@@ -251,28 +266,40 @@
       });
     }
 
+    if (activeCell && activeCellRect) {
+      activeCellInput.style.display = 'block';
+      activeCellInput.style.font = STYLES.fonts.default;
+      activeCellInput.style.left = `${activeCellRect.x}px`;
+      activeCellInput.style.top = `${activeCellRect.y}px`;
+      activeCellInput.style.height = `${activeCellRect.height}px`;
+      activeCellInput.style.width = `${activeCellRect.width}px`;
+      activeCellInput.value = getCellData(activeCell.rowIndex, activeCell.columnIndex);
+    } else {
+      activeCellInput.style.display = 'none';
+    }
+
     drawRect({
       context,
-      fillStyle: COLORS.background.fixedRow,
+      fillStyle: STYLES.background.fixedRow,
       rect: getCellRect(-1, -1),
       strokeSides: STROKE_SIDE_BOTTOM | STROKE_SIDE_RIGHT,
-      strokeStyle: COLORS.border.fixedRow,
+      strokeStyle: STYLES.border.fixedRow,
     });
   }
 
   function drawFixedColumnNumber({ context, isSelected, rect, text }) {
     drawRect({
       context,
-      fillStyle: isSelected ? COLORS.background.selectedFixed : COLORS.background.default,
+      fillStyle: isSelected ? STYLES.background.selectedFixed : STYLES.background.default,
       rect,
       strokeSides: STROKE_SIDE_BOTTOM | STROKE_SIDE_RIGHT,
-      strokeStyle: COLORS.border.fixedColumn,
+      strokeStyle: STYLES.border.fixedColumn,
     })
 
     fillTextHelper({
       context,
-      fillStyle: COLORS.text.default,
-      font: isSelected ? "8px sans-serif bold" : "8px sans-serif",
+      fillStyle: STYLES.text.default,
+      font: isSelected ? STYLES.fonts.fixedColumnSelected : STYLES.fonts.fixedColumn,
       padding: cellPadding,
       rect,
       text,
@@ -283,16 +310,16 @@
   function drawFixedHeaderRow({ context, isSelected, rect, text }) {
     drawRect({
       context,
-      fillStyle: isSelected ? COLORS.background.selectedFixed : COLORS.background.fixedRow,
+      fillStyle: isSelected ? STYLES.background.selectedFixed : STYLES.background.fixedRow,
       lineWidth: 1,
       rect,
       strokeSides: STROKE_SIDE_BOTTOM | STROKE_SIDE_RIGHT,
-      strokeStyle: COLORS.border.fixedRow,
+      strokeStyle: STYLES.border.fixedRow,
     });
 
     fillTextHelper({
       context,
-      font: isSelected ? "10px sans-serif bold" : "10px sans-serif",
+      font: isSelected ? STYLES.fonts.fixedRowSelected : STYLES.fonts.fixedRow,
       padding: cellPadding,
       rect,
       text,
@@ -307,21 +334,21 @@
 
     switch (mode) {
       case 'focused': {
-        fillStyle = COLORS.background.focused;
+        fillStyle = STYLES.background.focused;
         lineWidth = 2;
-        strokeStyle = COLORS.border.focused;
+        strokeStyle = STYLES.border.focused;
         break;
       }
       case 'selected': {
-        fillStyle = COLORS.background.selected;
+        fillStyle = STYLES.background.selected;
         lineWidth = 1;
-        strokeStyle = COLORS.border.default;
+        strokeStyle = STYLES.border.default;
         break;
       }
       case 'view': {
-        fillStyle = COLORS.background.default;
+        fillStyle = STYLES.background.default;
         lineWidth = 1;
-        strokeStyle = COLORS.border.default;
+        strokeStyle = STYLES.border.default;
         break;
       }
       default: {
@@ -350,8 +377,8 @@
   function fillTextHelper({
     textBaseline = "middle",
     context,
-    fillStyle = COLORS.text.default,
-    font = "10px sans-serif",
+    fillStyle = STYLES.text.default,
+    font = STYLES.fonts.default,
     padding,
     rect,
     text,
@@ -428,6 +455,8 @@
         return totalWidth + width;
       }, 0);
 
+    let activeCell = null;
+    let activeCellRect = null;
     let firstDragCell = null;
     let mostRecentDragCell = null;
 
@@ -435,11 +464,22 @@
     let offsetY = 0;
 
     let focusedCell = null;
+    let pointerMovedAfterDown = false;
     let selection = null;
 
     const sizer = document.getElementById('sizer');
     sizer.style.height = `${cellHeight * numRows}px`
     sizer.style.width = `${totalWidth}px`;
+
+    activeCellInput.addEventListener('keydown', (event) => {
+      switch (event.key) {
+        case "Enter":
+        case "Tab": {
+          confirmPendingEdit(activeCell, activeCellInput.value);
+          break;
+        }
+      }
+    })
 
     // Let the browser manage (elastic) scrolling for us
     scroller.addEventListener('scroll', (event) => {
@@ -455,7 +495,14 @@
     // TODO Support keyboard navigation also
 
     scroller.addEventListener('pointerdown', (event) => {
+      if (activeCell) {
+        confirmPendingEdit(activeCell, activeCellInput.value);
+      }
+
+      activeCell = null;
+      activeCellRect = null;
       focusedCell = firstDragCell = getCellAtPosition(event.offsetX, event.offsetY);
+      pointerMovedAfterDown = false;
 
       if (focusedCell) {
         selection = {
@@ -469,6 +516,8 @@
 
     scroller.addEventListener('pointermove', (event) => {
       // TODO Update selection when moving outside of canvas (or within fixed cells)
+
+      pointerMovedAfterDown = true;
 
       if (firstDragCell) {
         const cell = getCellAtPosition(event.offsetX, event.offsetY);
@@ -492,15 +541,37 @@
       }
     });
 
-    scroller.addEventListener('pointerup', (event) => {
+    window.addEventListener('pointerup', (event) => {
+      if (firstDragCell && !pointerMovedAfterDown) {
+        activeCell = firstDragCell;
+
+        const rect = getCellRect(activeCell.rowIndex, activeCell.columnIndex);
+        activeCellRect = {
+          ...rect,
+          x: rect.x - offsetX,
+          y: rect.y - offsetY,
+        };
+
+        activeCellInput.style.display = 'block';
+        activeCellInput.focus();
+
+        redraw()
+      }
+
       firstDragCell = null;
       mostRecentDragCell = null;
     });
 
-    window.addEventListener('pointerup', (event) => {
-      firstDragCell = null;
-      mostRecentDragCell = null;
-    });
+    function confirmPendingEdit(cell, value) {
+      const { columnIndex, rowIndex } = cell;
+      const index = rowIndex * numCols + columnIndex;
+      randomData[index] = value;
+
+      activeCell = null;
+      activeCellRect = null;
+
+      redraw();
+    }
 
     function getCellSize(rowIndex, columnIndex) {
       return {
@@ -542,26 +613,30 @@
       }
     }
 
+    // TODO Cache computed cell offsets so we don't need to recalculate on every scroll
+    function getCellRect(rowIndex, columnIndex) {
+      let width = columnIndex < 0 ? fixedCellWidth : randomCellWidths[columnIndex];
+
+      let x = 0;
+      for (let prevColumnIndex = -1; prevColumnIndex < columnIndex; prevColumnIndex++) {
+        const { width } = getCellSize(0, prevColumnIndex);
+
+        x += width;
+      }
+
+      return {
+        height: cellHeight,
+        width,
+        x,
+        y: (rowIndex + 1) * cellHeight
+      };
+    }
+
     function redraw() {
       draw({
-        // TODO Cache computed cell offsets so we don't need to recalculate on every scroll
-        getCellRect: (rowIndex, columnIndex) => {
-          let width = columnIndex < 0 ? fixedCellWidth : randomCellWidths[columnIndex];
-
-          let x = 0;
-          for (let prevColumnIndex = -1; prevColumnIndex < columnIndex; prevColumnIndex++) {
-            const { width } = getCellSize(0, prevColumnIndex);
-
-            x += width;
-          }
-
-          return {
-            height: cellHeight,
-            width,
-            x,
-            y: (rowIndex + 1) * cellHeight
-          };
-        },
+        activeCell,
+        activeCellRect,
+        getCellRect,
         getCellData: (rowIndex, columnIndex) => {
           const index = rowIndex * numCols + columnIndex;
           return randomData[index];
