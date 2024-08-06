@@ -17,6 +17,7 @@
     top: 0;
     left: 0;
     touch-action: pan-x pan-y;
+    outline: none;
   }
 
   #canvas {
@@ -37,8 +38,30 @@
   </div>
 </div>
 
+<script src="./utils.js"></script>
 <script>
   const columnHeaders = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+  const COLORS = {
+    background: {
+      default: '#fff',
+      fixedRow: '#f8f9fa',
+      focused: '#eee9effdf',
+      selected: '#e9effd',
+      selectedFixed: '#d3e3fe',
+    },
+    border: {
+      default: '#e1e1e1',
+      fixedColumn: '#c0c0c0',
+      fixedRow: '#c0c0c0',
+      focused: '#1b73e8',
+      selected: '#1b73e8',
+    },
+    text: {
+      default: '#333',
+      fixedColumn: '#888',
+    },
+  };
 
   let width = 800;
   let height = 400;
@@ -160,37 +183,37 @@
 
     // Draw selection outline above base grid
     if (selection) {
-      context.strokeStyle = '#88f';
-
       const topLeftCell = modifyRectForOffsets(getCellRect(selection.start.rowIndex, selection.start.columnIndex));
       const bottomRightCell = modifyRectForOffsets(getCellRect(selection.stop.rowIndex, selection.stop.columnIndex));
 
-      const x0 = topLeftCell.x;
-      const y0 = topLeftCell.y;
-      const x1 = bottomRightCell.x + bottomRightCell.width;
-      const y1 = bottomRightCell.y + bottomRightCell.height;
-
-      context.beginPath();
-      context.moveTo(x0, y0);
-      context.lineTo(x1, y0);
-      context.lineTo(x1, y1);
-      context.lineTo(x0, y1);
-      context.lineTo(x0, y0);
-      context.stroke();
-      context.closePath();
+      drawRect({
+        context,
+        rect: {
+          height: bottomRightCell.y + bottomRightCell.height - topLeftCell.y,
+          width: bottomRightCell.x + bottomRightCell.width - topLeftCell.x,
+          x: topLeftCell.x,
+          y: topLeftCell.y,
+        },
+        strokeStyle: COLORS.border.selected,
+      });
     }
 
-    // Draw active cell on top of everything else
+    // Draw focused cell on top of everything else
     if (focusedCell) {
       const { columnIndex, rowIndex } = focusedCell;
+      const rect = modifyRectForOffsets(getCellRect(rowIndex, columnIndex));
 
-      drawDataCell({
-        columnIndex,
+      drawRect({
+        boxSizing: "content-box",
         context,
-        mode: "focused",
-        rect: modifyRectForOffsets(getCellRect(rowIndex, columnIndex)),
-        rowIndex,
-        text: getCellData(rowIndex, columnIndex),
+        lineWidth: 2,
+        rect: {
+          height: rect.height,
+          width: rect.width,
+          x: rect.x,
+          y: rect.y,
+        },
+        strokeStyle: COLORS.border.focused,
       });
     }
 
@@ -200,9 +223,9 @@
       columnIndex <= visibleBounds.stop.columnIndex;
       columnIndex++
     ) {
-      drawFixedCell({
+      drawFixedHeaderRow({
         context,
-        isFocused: focusedCell?.columnIndex === columnIndex,
+        isSelected: selection && selection.start.columnIndex <= columnIndex && selection.stop.columnIndex >= columnIndex,
         rect: {
           ...modifyRectForOffsets(getCellRect(-1, columnIndex)),
           y: 0,
@@ -217,9 +240,9 @@
       rowIndex <= visibleBounds.stop.rowIndex;
       rowIndex++
     ) {
-      drawFixedCell({
+      drawFixedColumnNumber({
         context,
-        isFocused: focusedCell?.rowIndex === rowIndex,
+        isSelected: selection && selection.start.rowIndex <= rowIndex && selection.stop.rowIndex >= rowIndex,
         rect: {
           ...modifyRectForOffsets(getCellRect(rowIndex, -1)),
           x: 0
@@ -228,32 +251,48 @@
       });
     }
 
-    drawFixedCell({
+    drawRect({
       context,
+      fillStyle: COLORS.background.fixedRow,
       rect: getCellRect(-1, -1),
-      text: "",
+      strokeSides: STROKE_SIDE_BOTTOM | STROKE_SIDE_RIGHT,
+      strokeStyle: COLORS.border.fixedRow,
     });
   }
 
-  function drawFixedCell({ context, isFocused, radius = 0, rect, text }) {
-    const { height, width, x, y } = rect;
-
-    if (isFocused) {
-      context.fillStyle = '#ccf';
-    } else {
-      context.fillStyle = '#eee';
-    }
-
-    context.strokeStyle = '#ddd';
-
-    context.beginPath();
-    context.roundRect(x, y, width, height, radius);
-    context.fill();
-    context.stroke();
-    context.closePath();
+  function drawFixedColumnNumber({ context, isSelected, rect, text }) {
+    drawRect({
+      context,
+      fillStyle: isSelected ? COLORS.background.selectedFixed : COLORS.background.default,
+      rect,
+      strokeSides: STROKE_SIDE_BOTTOM | STROKE_SIDE_RIGHT,
+      strokeStyle: COLORS.border.fixedColumn,
+    })
 
     fillTextHelper({
       context,
+      fillStyle: COLORS.text.default,
+      font: isSelected ? "8px sans-serif bold" : "8px sans-serif",
+      padding: cellPadding,
+      rect,
+      text,
+      textAlign: 'center',
+    });
+  }
+
+  function drawFixedHeaderRow({ context, isSelected, rect, text }) {
+    drawRect({
+      context,
+      fillStyle: isSelected ? COLORS.background.selectedFixed : COLORS.background.fixedRow,
+      lineWidth: 1,
+      rect,
+      strokeSides: STROKE_SIDE_BOTTOM | STROKE_SIDE_RIGHT,
+      strokeStyle: COLORS.border.fixedRow,
+    });
+
+    fillTextHelper({
+      context,
+      font: isSelected ? "10px sans-serif bold" : "10px sans-serif",
       padding: cellPadding,
       rect,
       text,
@@ -262,32 +301,27 @@
   }
 
   function drawDataCell({ columnIndex, context, mode, rect, rowIndex, text }) {
-    let radius = 0;
-
-    let {
-      height,
-      width,
-      x,
-      y,
-    } = rect;
+    let fillStyle;
+    let lineWidth;
+    let strokeStyle;
 
     switch (mode) {
       case 'focused': {
-        context.fillStyle = '#eef';
-        context.lineWidth = 2;
-        context.strokeStyle = '#88f';
+        fillStyle = COLORS.background.focused;
+        lineWidth = 2;
+        strokeStyle = COLORS.border.focused;
         break;
       }
       case 'selected': {
-        context.fillStyle = '#eef';
-        context.lineWidth = 1;
-        context.strokeStyle = '#ddd';
+        fillStyle = COLORS.background.selected;
+        lineWidth = 1;
+        strokeStyle = COLORS.border.default;
         break;
       }
       case 'view': {
-        context.fillStyle = '#fff';
-        context.lineWidth = 1;
-        context.strokeStyle = '#ddd';
+        fillStyle = COLORS.background.default;
+        lineWidth = 1;
+        strokeStyle = COLORS.border.default;
         break;
       }
       default: {
@@ -295,11 +329,14 @@
       }
     }
 
-    context.beginPath();
-    context.roundRect(x, y, width, height, radius);
-    context.fill();
-    context.stroke();
-    context.closePath();
+    drawRect({
+      context,
+      fillStyle,
+      lineWidth,
+      rect,
+      strokeSides: STROKE_SIDE_BOTTOM | STROKE_SIDE_RIGHT,
+      strokeStyle,
+    });
 
     fillTextHelper({
       context,
@@ -311,7 +348,10 @@
   }
 
   function fillTextHelper({
+    textBaseline = "middle",
     context,
+    fillStyle = COLORS.text.default,
+    font = "10px sans-serif",
     padding,
     rect,
     text,
@@ -336,9 +376,9 @@
 
     const verticalCenter = y + height / 2;
 
-    context.font = "10px sans-serif";
-    context.textBaseline = "middle";
-    context.fillStyle = '#333';
+    context.font = font;
+    context.textBaseline = textBaseline;
+    context.fillStyle = fillStyle;
 
     switch (textAlign) {
       case "center": {
@@ -369,7 +409,7 @@
     const numCols = 100;
 
     const cellHeight = 20;
-    const cellWidth = 50;
+    const fixedCellWidth = 20;
 
     const randomData = new Array(numRows * numCols)
       .fill(true)
@@ -377,7 +417,7 @@
 
     const randomCellWidths = new Array(numRows * numCols)
       .fill(true)
-      .map(() => cellWidth + Math.round(Math.random() * 25));
+      .map(() => 50 + Math.round(Math.random() * 25));
 
     const totalWidth = new Array(numCols)
       .fill(true)
@@ -465,24 +505,28 @@
     function getCellSize(rowIndex, columnIndex) {
       return {
         height: cellHeight,
-        width: columnIndex < 0 ? cellWidth : randomCellWidths[columnIndex]
+        width: columnIndex < 0 ? fixedCellWidth : randomCellWidths[columnIndex]
       };
     }
 
     function getCellAtPosition(x, y, findNearest) {
       let columnIndex = -1;
       let currentX = 0;
-      for (; columnIndex < numCols; columnIndex++) {
+      while (true) {
         const { width } = getCellSize(0, columnIndex);
 
         currentX += width;
 
         if (currentX >= x && currentX + width >= x) {
           break;
+        } else if (columnIndex === numCols - 1) {
+          break;
         }
+
+        columnIndex++;
       }
 
-      const rowIndex = Math.floor(y / cellHeight) - 1;
+      const rowIndex = Math.min(numRows - 1, Math.floor(y / cellHeight) - 1);
 
       if (columnIndex < 0 || rowIndex < 0) {
         if (findNearest) {
@@ -502,7 +546,7 @@
       draw({
         // TODO Cache computed cell offsets so we don't need to recalculate on every scroll
         getCellRect: (rowIndex, columnIndex) => {
-          let width = randomCellWidths[columnIndex] ?? cellWidth;
+          let width = columnIndex < 0 ? fixedCellWidth : randomCellWidths[columnIndex];
 
           let x = 0;
           for (let prevColumnIndex = -1; prevColumnIndex < columnIndex; prevColumnIndex++) {
