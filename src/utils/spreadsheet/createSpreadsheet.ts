@@ -27,6 +27,7 @@ export function createSpreadsheet(config: SpreadsheetConfig) {
 
   window.addEventListener("resize", () => {
     resizeAndScaleElements({ config, state });
+    drawSpreadsheet(config, state);
   });
 
   // Let the browser manage (elastic) scrolling for us

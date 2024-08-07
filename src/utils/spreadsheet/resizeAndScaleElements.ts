@@ -1,5 +1,6 @@
 import { SpreadsheetConfig, SpreadsheetState } from "../../types";
 import { scaleForDevicePixelRatio } from "../canvas/scaleForDevicePixelRatio";
+import { drawSpreadsheet } from "./drawSpreadsheet";
 
 export function resizeAndScaleElements({
   config,
