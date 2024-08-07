@@ -1,0 +1,31 @@
+body {
+  background: #ddd;
+  padding: 0;
+  margin: 0;
+}
+
+#positioner {
+  position: relative;
+}
+
+#scroller {
+  overflow: auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  touch-action: pan-x pan-y;
+  outline: none;
+}
+
+#canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #fff;
+}
+
+#cellInput {
+  position: absolute;
+  text-align: right;
+  display: none;
+}

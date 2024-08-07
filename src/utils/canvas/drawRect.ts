@@ -1,9 +1,11 @@
-const STROKE_SIDE_BOTTOM = 0b0001;
-const STROKE_SIDE_LEFT = 0b0010;
-const STROKE_SIDE_RIGHT = 0b0100;
-const STROKE_SIDE_TOP = 0b1000;
+import { Rect } from "../../types";
 
-function drawRect({
+export const STROKE_SIDE_BOTTOM = 0b0001;
+export const STROKE_SIDE_LEFT = 0b0010;
+export const STROKE_SIDE_RIGHT = 0b0100;
+export const STROKE_SIDE_TOP = 0b1000;
+
+export function drawRect({
   context,
   fillStyle,
   lineCap = "square",
@@ -14,11 +16,23 @@ function drawRect({
     STROKE_SIDE_RIGHT |
     STROKE_SIDE_TOP,
   strokeStyle,
+}: {
+  context: CanvasRenderingContext2D;
+  fillStyle?: CanvasRenderingContext2D["fillStyle"];
+  lineCap?: CanvasRenderingContext2D["lineCap"];
+  lineWidth?: CanvasRenderingContext2D["lineWidth"];
+  rect: Rect;
+  strokeSides?: number;
+  strokeStyle?: CanvasRenderingContext2D["strokeStyle"];
 }) {
-  context.fillStyle = fillStyle;
+  if (fillStyle != null) {
+    context.fillStyle = fillStyle;
+  }
   context.lineCap = lineCap;
   context.lineWidth = lineWidth;
-  context.strokeStyle = strokeStyle;
+  if (strokeStyle != null) {
+    context.strokeStyle = strokeStyle;
+  }
 
   let x0 = Math.floor(rect.x);
   let x1 = Math.ceil(rect.x + rect.width);
