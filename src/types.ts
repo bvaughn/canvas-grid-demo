@@ -39,15 +39,11 @@ export type SpreadsheetState = {
   offsetX: number;
   offsetY: number;
   focusedCell: Cell | null;
-  pointerState: {
+  selectionState: {
     currentCell: Cell;
     isDown: boolean;
     isDragging: boolean;
     startCell: Cell;
-  } | null;
-  selection: {
-    start: Cell;
-    stop: Cell;
   } | null;
   width: number;
 };

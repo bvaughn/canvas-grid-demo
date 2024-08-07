@@ -1,13 +1,13 @@
-import { SpreadsheetConfig, SpreadsheetState } from "../../types";
-import { confirmPendingEdit } from "./confirmPendingEdit";
+import { Cell, SpreadsheetConfig, SpreadsheetState } from "../../types";
+import { activateCell } from "./activateCell";
 import { drawSpreadsheet } from "./drawSpreadsheet";
 import { getCellAtPosition } from "./getCellAtPosition";
-import { getCellRect } from "./getCellRect";
 import { resizeAndScaleElements } from "./resizeAndScaleElements";
 import { resizeScrollableArea } from "./resizeScrollableArea";
+import { scrollCellIntoView } from "./scrollCellIntoView";
 
 export function createSpreadsheet(config: SpreadsheetConfig) {
-  const { inputElement, scrollerElement } = config;
+  const { columnCount, inputElement, rowCount, scrollerElement } = config;
 
   const state: SpreadsheetState = {
     activeCell: null,
@@ -16,8 +16,7 @@ export function createSpreadsheet(config: SpreadsheetConfig) {
     offsetX: 0,
     offsetY: 0,
     focusedCell: null,
-    pointerState: null,
-    selection: null,
+    selectionState: null,
     width: window.innerWidth,
   };
 
@@ -40,6 +39,102 @@ export function createSpreadsheet(config: SpreadsheetConfig) {
     drawSpreadsheet(config, state);
   });
 
+  scrollerElement.addEventListener("keydown", (event) => {
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowLeft":
+      case "ArrowRight":
+      case "ArrowUp": {
+        if (state.activeCell) {
+          return;
+        }
+
+        event.preventDefault();
+
+        // TODO Maybe support event.metaKey for Home/End
+
+        if (state.focusedCell) {
+          const prevCell = event.shiftKey
+            ? state.selectionState?.currentCell ?? state.focusedCell
+            : state.focusedCell;
+
+          let newCell: Cell | null = null;
+
+          switch (event.key) {
+            case "ArrowDown": {
+              if (prevCell.rowIndex + 1 < rowCount) {
+                newCell = {
+                  columnIndex: prevCell.columnIndex,
+                  rowIndex: prevCell.rowIndex + 1,
+                };
+              }
+              break;
+            }
+            case "ArrowLeft": {
+              if (prevCell.columnIndex > 0) {
+                newCell = {
+                  columnIndex: prevCell.columnIndex - 1,
+                  rowIndex: prevCell.rowIndex,
+                };
+              }
+              break;
+            }
+            case "ArrowRight": {
+              if (prevCell.columnIndex + 1 < columnCount) {
+                newCell = {
+                  columnIndex: prevCell.columnIndex + 1,
+                  rowIndex: prevCell.rowIndex,
+                };
+              }
+              break;
+            }
+            case "ArrowUp": {
+              if (prevCell.rowIndex > 0) {
+                newCell = {
+                  columnIndex: prevCell.columnIndex,
+                  rowIndex: prevCell.rowIndex - 1,
+                };
+              }
+              break;
+            }
+          }
+
+          if (newCell) {
+            if (event.shiftKey) {
+              if (state.selectionState) {
+                state.selectionState.currentCell = newCell;
+              }
+            } else {
+              state.focusedCell = newCell;
+              state.selectionState = {
+                isDown: false,
+                isDragging: false,
+                currentCell: newCell,
+                startCell: newCell,
+              };
+            }
+
+            // Scroll the grid if needed to make sure the new cell is visible
+            scrollCellIntoView({ cell: newCell, config, state });
+
+            drawSpreadsheet(config, state);
+          }
+        }
+        break;
+      }
+      case "Enter": {
+        if (state.focusedCell) {
+          activateCell({
+            cell: state.focusedCell,
+            config,
+            state,
+          });
+        }
+        break;
+      }
+    }
+  });
+
   inputElement.addEventListener("keydown", (event) => {
     switch (event.key) {
       case "Enter":
@@ -54,6 +149,8 @@ export function createSpreadsheet(config: SpreadsheetConfig) {
           state.activeCellRect = null;
 
           drawSpreadsheet(config, state);
+
+          scrollerElement.focus();
         }
         break;
       }
@@ -62,6 +159,8 @@ export function createSpreadsheet(config: SpreadsheetConfig) {
         state.activeCellRect = null;
 
         drawSpreadsheet(config, state);
+
+        scrollerElement.focus();
         break;
       }
     }
@@ -88,18 +187,11 @@ export function createSpreadsheet(config: SpreadsheetConfig) {
     state.focusedCell = cell;
 
     if (cell) {
-      state.pointerState = {
+      state.selectionState = {
         currentCell: cell,
         isDown: true,
         isDragging: false,
         startCell: cell,
-      };
-    }
-
-    if (state.focusedCell) {
-      state.selection = {
-        start: state.focusedCell,
-        stop: state.focusedCell,
       };
     }
 
@@ -109,11 +201,11 @@ export function createSpreadsheet(config: SpreadsheetConfig) {
   scrollerElement.addEventListener("pointermove", (event) => {
     // TODO Update selection when moving outside of canvas (or within fixed cells)
 
-    if (state.pointerState) {
-      state.pointerState.isDragging = true;
+    if (state.selectionState) {
+      state.selectionState.isDragging = true;
     }
 
-    if (state.pointerState) {
+    if (state.selectionState?.isDown) {
       const cell = getCellAtPosition({
         config,
         coordinates: { x: event.offsetX, y: event.offsetY },
@@ -121,31 +213,7 @@ export function createSpreadsheet(config: SpreadsheetConfig) {
       });
 
       if (cell) {
-        state.pointerState.currentCell = cell;
-
-        // Re-calculate all selected cells based on start point and current point
-        state.selection = {
-          start: {
-            columnIndex: Math.min(
-              state.pointerState.startCell.columnIndex,
-              cell.columnIndex
-            ),
-            rowIndex: Math.min(
-              state.pointerState.startCell.rowIndex,
-              cell.rowIndex
-            ),
-          },
-          stop: {
-            columnIndex: Math.max(
-              state.pointerState.startCell.columnIndex,
-              cell.columnIndex
-            ),
-            rowIndex: Math.max(
-              state.pointerState.startCell.rowIndex,
-              cell.rowIndex
-            ),
-          },
-        };
+        state.selectionState.currentCell = cell;
 
         drawSpreadsheet(config, state);
       }
@@ -153,25 +221,16 @@ export function createSpreadsheet(config: SpreadsheetConfig) {
   });
 
   window.addEventListener("pointerup", () => {
-    if (state.focusedCell && !state.pointerState?.isDragging) {
-      state.activeCell = state.focusedCell;
+    if (state.focusedCell && !state.selectionState?.isDragging) {
+      activateCell({
+        cell: state.focusedCell,
+        config,
+        state,
+      });
 
-      const rect = getCellRect({ cell: state.activeCell, config, state });
-      state.activeCellRect = {
-        ...rect,
-        x: rect.x - state.offsetX,
-        y: rect.y - state.offsetY,
-      };
-
-      inputElement.style.display = "block";
-      inputElement.focus();
-
-      drawSpreadsheet(config, state);
+      if (state.selectionState) {
+        state.selectionState.isDown = false;
+      }
     }
-
-    state.pointerState = null;
   });
-
-  // TODO Add more event listeners
-  // TODO Support keyboard navigation also
 }

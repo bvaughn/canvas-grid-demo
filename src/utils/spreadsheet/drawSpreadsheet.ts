@@ -10,6 +10,8 @@ import { fillText } from "../canvas/fillText";
 import { getCellAtPosition } from "./getCellAtPosition";
 import { getCellRect } from "./getCellRect";
 import { getColumnHeader } from "./getColumnHeader";
+import { getMergedRect } from "./getMergedRect";
+import { isCellSelected } from "./isCellSelected";
 import { transposeRect } from "./transposeRect";
 
 export function drawSpreadsheet(
@@ -17,7 +19,8 @@ export function drawSpreadsheet(
   state: SpreadsheetState
 ) {
   const { context, getCellValue, inputElement } = config;
-  const { focusedCell, height, offsetX, offsetY, selection, width } = state;
+  const { focusedCell, height, offsetX, offsetY, selectionState, width } =
+    state;
 
   context.clearRect(0, 0, width, height);
 
@@ -60,12 +63,10 @@ export function drawSpreadsheet(
       columnIndex <= visibleBounds.stop.columnIndex;
       columnIndex++
     ) {
-      const isSelected =
-        selection &&
-        rowIndex >= selection.start.rowIndex &&
-        rowIndex <= selection.stop.rowIndex &&
-        columnIndex >= selection.start.columnIndex &&
-        columnIndex <= selection.stop.columnIndex;
+      const isSelected = isCellSelected({
+        cell: { columnIndex, rowIndex },
+        state,
+      });
 
       const cell = { columnIndex, rowIndex };
 
@@ -113,24 +114,10 @@ export function drawSpreadsheet(
   }
 
   // Draw selection outline above base grid
-  if (selection) {
-    const topLeftCell = transposeRect(
-      getCellRect({
-        cell: {
-          columnIndex: selection.start.columnIndex,
-          rowIndex: selection.start.rowIndex,
-        },
-        config,
-        state,
-      }),
-      state
-    );
-    const bottomRightCell = transposeRect(
-      getCellRect({
-        cell: {
-          columnIndex: selection.stop.columnIndex,
-          rowIndex: selection.stop.rowIndex,
-        },
+  if (selectionState) {
+    const rect = transposeRect(
+      getMergedRect({
+        cells: [selectionState.startCell, selectionState.currentCell],
         config,
         state,
       }),
@@ -139,12 +126,7 @@ export function drawSpreadsheet(
 
     drawRect({
       context,
-      rect: {
-        height: bottomRightCell.y + bottomRightCell.height - topLeftCell.y,
-        width: bottomRightCell.x + bottomRightCell.width - topLeftCell.x,
-        x: topLeftCell.x,
-        y: topLeftCell.y,
-      },
+      rect,
       strokeStyle: STYLES.border.selected,
     });
   }
@@ -179,10 +161,7 @@ export function drawSpreadsheet(
     columnIndex <= visibleBounds.stop.columnIndex;
     columnIndex++
   ) {
-    const isSelected =
-      selection &&
-      selection.start.columnIndex <= columnIndex &&
-      selection.stop.columnIndex >= columnIndex;
+    const isSelected = isCellSelected({ cell: { columnIndex }, state });
     const rect = {
       ...transposeRect(
         getCellRect({
@@ -222,10 +201,7 @@ export function drawSpreadsheet(
     rowIndex <= visibleBounds.stop.rowIndex;
     rowIndex++
   ) {
-    const isSelected =
-      selection &&
-      selection.start.rowIndex <= rowIndex &&
-      selection.stop.rowIndex >= rowIndex;
+    const isSelected = isCellSelected({ cell: { rowIndex }, state });
 
     const rect = {
       ...transposeRect(
